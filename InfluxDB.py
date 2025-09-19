@@ -1,3 +1,7 @@
+"""
+Handles InfluxDB connections and data writing
+"""
+
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from datetime import datetime, timezone
@@ -6,14 +10,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Handler:
-    """Handles InfluxDB connections and data writing"""
-
+    # constructor
     def __init__(self, url: str, token: str, org: str, bucket: str):
         self.client = InfluxDBClient(url=url, token=token, org=org)
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.bucket = bucket
         self.org = org
 
+    # handles data from an IG push
     def write_market_data(self, epic: str,
                           timestamp: str,
                           bid: float,
@@ -21,10 +25,8 @@ class Handler:
                           ltp: float,
                           ltv: float,
                           ttv: float):
-        """Write market data point to InfluxDB"""
         try:
-            timestamp = int(timestamp)
-            # Convert timestamp to datetime if it's a string
+            timestamp = int(timestamp) # its handed in as a str
             if isinstance(timestamp, (int, float)):
                 # Handle epoch milliseconds
                 dt = datetime.fromtimestamp(timestamp / 1000)
@@ -33,7 +35,7 @@ class Handler:
 
             point = Point("market_data").tag("epic", epic)
 
-            # Required fields
+            # Required fields, most important stuff
             if bid is not None and offer is not None:
                 point = (
                     point
@@ -42,7 +44,7 @@ class Handler:
                     .field("spread", float(offer) - float(bid))
                 )
 
-            # Optional fields
+            # Optional fields, i.e. these are often returned none type
             if ltp is not None:
                 point = point.field("ltp", float(ltp))
             if ltv is not None:
@@ -59,5 +61,4 @@ class Handler:
             logger.error(f"Error writing to InfluxDB: {e}")
 
     def close(self):
-        """Close InfluxDB client"""
         self.client.close()

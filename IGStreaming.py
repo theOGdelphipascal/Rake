@@ -7,15 +7,19 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
+"""
+Class that handles listening to IG.
+This might actually be in the IG python library but the documentation sucks and I understand this because I wrote it.
+"""
 class MarketListener:
-    """Market listener that handles multiple epics and saves to InfluxDB"""
-
     def __init__(self, influx_handler: Handler, epics: List[str]):
         self.influx_handler = influx_handler
         self.epics = epics
         self.epic_map = {}  # Map subscription items to epics
 
         # Create epic mapping for subscription items
+        # The map is required because the update includes the Chart/Tick bit
+        #   but we want to leave just the epic in Influx
         for epic in epics:
             self.epic_map[f"CHART:{epic}:TICK"] = epic
 
@@ -38,6 +42,7 @@ class MarketListener:
             ltv = update.getValue("LTV")
             ttv = update.getValue("TTV")
 
+            # Uncomment for debugging issues
             # print(f"---{epic}---")
             # print(f"utm {utm}.")
             # print(f"bid {bid}.")
@@ -89,8 +94,8 @@ class MarketListener:
         logger.error(f"Unsubscription error {code}: {message}")
 
 
+# Nice and clean in this function but can just as well be in the main script
 def create_multi_epic_subscription(epics: List[str]) -> Subscription:
-    """Create a subscription for multiple epics"""
     items = [f"CHART:{epic}:TICK" for epic in epics]
 
     subscription = Subscription(
@@ -101,7 +106,7 @@ def create_multi_epic_subscription(epics: List[str]) -> Subscription:
 
     return subscription
 
-
+# Same as above
 def read_epics_from_file(filename: str = 'epics.txt') -> List[str]:
     epics = []
     try:

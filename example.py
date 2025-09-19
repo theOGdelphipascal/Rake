@@ -1,3 +1,30 @@
+"""
+An example script for the functions and classes found in IGStreaming and InfluxDB.
+It is expected that all the variables are stored in an ini file but I mainly did this to reduce
+    security risks from commits.
+
+I log chart ticks by default so its hard coded into the IGStreaming code. You may want to change this.
+
+Expected config.ini layout
+[DEFAULT]
+username = XXXXXX
+password = XXXXXX
+api_key = XXXXXX
+acc_type = LIVE/DEMO
+[INFLUXDB]
+url = XXXXXX
+token = XXXXXX
+org = XXXXXX
+bucket = XXXXXX
+
+Expected epics.txt
+# comment
+EPIC...
+# EPIC_COMMENTED_OUT
+
+"""
+
+
 from trading_ig import IGService, IGStreamService
 import configparser
 import time
@@ -32,6 +59,7 @@ def main():
     epics_file = config.get('DEFAULT', 'epics_file', fallback='epics.txt')
     epics = read_epics_from_file(epics_file)
 
+    # Check there are epics in the text
     if not epics:
         logger.error("No epics to monitor. Please check your epics file.")
         return
@@ -66,7 +94,7 @@ def main():
     except Exception as e:
         logger.error(f"Application error: {e}")
 
-    finally:
+    finally: # don't you just love python?
         # Clean up
         try:
             ig_stream_service.disconnect()
