@@ -3,7 +3,7 @@ import sys
 from lightstreamer.client import Subscription
 from InfluxDB import Handler
 from typing import List
-
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +15,23 @@ class MarketListener:
     def __init__(self, influx_handler: Handler, epics: List[str]):
         self.influx_handler = influx_handler
         self.epics = epics
-        self.epic_map = {}  # Map subscription items to epics
+        self.epic_map = {}
+        self.ig_stream_service = None
+        self.subscription = None
+        self.resubscribe_attempts = 0
+        self.max_resubscribe_attempts = 5
+        self.resubscribe_delay = 5
 
         # Create epic mapping for subscription items
         # The map is required because the update includes the Chart/Tick bit
         #   but we want to leave just the epic in Influx
         for epic in epics:
             self.epic_map[f"CHART:{epic}:TICK"] = epic
+
+    def set_stream_service(self, ig_stream_service, subscription):
+        """Set references needed for resubscription"""
+        self.ig_stream_service = ig_stream_service
+        self.subscription = subscription
 
     def onItemUpdate(self, update):
         print()
@@ -59,6 +69,38 @@ class MarketListener:
         except Exception as e:
             logger.error(f"Error processing update: {e}")
 
+    def _attempt_resubscribe(self):
+        """Attempt to resubscribe to market data"""
+        if self.ig_stream_service is None or self.subscription is None:
+            logger.error("Cannot resubscribe: stream service or subscription not set")
+            return False
+
+        try:
+            logger.info(
+                f"Attempting to resubscribe (attempt {self.resubscribe_attempts + 1}/{self.max_resubscribe_attempts})...")
+
+            # Wait before attempting resubscription
+            time.sleep(self.resubscribe_delay)
+
+            # Create a new subscription with the same parameters
+            new_subscription = create_multi_epic_subscription(self.epics)
+            new_subscription.addListener(self)
+
+            # Update the subscription reference
+            self.subscription = new_subscription
+
+            # Subscribe to market data
+            self.ig_stream_service.subscribe(new_subscription)
+
+            logger.info(f"Successfully resubscribed to {len(self.epics)} epics")
+            self.resubscribe_attempts = 0  # Reset counter on success
+            return True
+
+        except Exception as e:
+            logger.error(f"Resubscription attempt failed: {e}")
+            self.resubscribe_attempts += 1
+            return False
+
     # Logging functions below.
     def onClearSnapshot(self, item_name: str, item_pos: int):
         logger.info(f"Clear snapshot for {item_name}")
@@ -89,6 +131,28 @@ class MarketListener:
 
     def onUnsubscription(self):
         logger.info("Unsubscribed")
+
+        # Attempt automatic resubscription
+        if self.resubscribe_attempts < self.max_resubscribe_attempts:
+            logger.info("Initiating automatic resubscription...")
+            success = self._attempt_resubscribe()
+
+            # If resubscription fails, keep trying with exponential backoff
+            while not success and self.resubscribe_attempts < self.max_resubscribe_attempts:
+                # Exponential backoff: double the delay with each attempt
+                self.resubscribe_delay = min(self.resubscribe_delay * 2, 60)  # Max 60 seconds
+                logger.info(f"Resubscription failed. Waiting {self.resubscribe_delay} seconds before next attempt...")
+                success = self._attempt_resubscribe()
+
+            if not success:
+                logger.error(
+                    f"Failed to resubscribe after {self.max_resubscribe_attempts} attempts. Manual intervention required.")
+            else:
+                # Reset delay on success
+                self.resubscribe_delay = 5
+        else:
+            logger.error(
+                f"Max resubscribe attempts ({self.max_resubscribe_attempts}) already reached. Manual intervention required.")
 
     def onUnsubscriptionError(self, code: int, message: str):
         logger.error(f"Unsubscription error {code}: {message}")

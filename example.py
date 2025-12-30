@@ -80,6 +80,10 @@ def main():
         market_subscription = create_multi_epic_subscription(epics)
         market_subscription.addListener(market_listener)
 
+        # Set the stream service and subscription references in the listener
+        # This allows the listener to automatically resubscribe if disconnected
+        market_listener.set_stream_service(ig_stream_service, market_subscription)
+
         # Subscribe to market data
         ig_stream_service.subscribe(market_subscription)
         logger.info(f"Subscribed to {len(epics)} epics: {', '.join(epics)}")
